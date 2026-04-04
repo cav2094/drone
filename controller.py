@@ -1,73 +1,100 @@
-#!/usr/bin/env python3
-
-# --- IMPORTS ---
-# Same as sensor.py — you need rclpy, Node, and Float32.
-# No need for `random` here though — this node only RECEIVES data.
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32
+from geometry_msgs.msg import Point, Twist
 
+from enum import Enum                                                         
+                                                                                
+class State(Enum):
+    STANDBY = 0
+    SCAN = 1
+    TRACK = 2
+    ENGAGE = 3
 
-
-# --- CLASS ---
-# Create a class called ControllerNode that inherits from Node.
 class ControllerNode(Node):
     def __init__(self):
         super().__init__('controller_node')
-        self.subscription = self.create_subscription(Float32, '/obstacle_distance', self.distance_callback, 10)
+        
+        # 1. Listen for the face position
+        self.subscription = self.create_subscription(Point, 'face_position', self.intruder_callback, 10)
 
+        # 2. Add the publisher to command the drone to move
+        self.cmd_publisher = self.create_publisher(Twist, 'cmd_vel', 10)
 
-    def distance_callback(self, msg):
-        distance = msg.data
-        if distance < 0.5:
-            self.get_logger().info('Emergency stop!')
-        elif distance < 1.5:
-            self.get_logger().info('Slow down!')
-        elif distance < 3.0:
-            self.get_logger().info('Caution!')
-        else:
-            self.get_logger().info('Full speed ahead!')
+        # 3. Setup the heartbeat
+        self.timer = self.create_timer(0.1, self.timer_callback)
 
+        # Initial Tracking Variables
+        self.state = State.STANDBY
+        self.latest_target = None
+        self.last_target_time = self.get_clock().now()
 
-    # --- __init__ ---
-    # Set up the node. You need to do 2 things here:
-    #
-    #   1. Call the parent constructor with a node name string.
-    #
-    #   2. Create a subscriber using self.create_subscription()
-    #      It needs: (message type, topic name, callback method, queue size)
-    #      Topic name must EXACTLY match sensor.py's topic: '/obstacle_distance'
-    #      The callback is a method you'll write below — pass it without calling it
-    #      (i.e., self.my_method not self.my_method())
-    #
-    # Notice: NO timer here. That's the key difference.
-    # This node is REACTIVE — it only does something when data arrives.
+        # Goal variables (Center of a 324x244 camera feed)
+        self.center_x = 162.0
+        self.center_y = 122.0
+        self.target_area = 15000.0  # The arbitrary distance we want to maintain
 
+    def intruder_callback(self, msg):
+        self.latest_target = msg
+        self.last_target_time = self.get_clock().now() # Record the exact time we saw it
+        
+    def timer_callback(self):
+        # Create an empty movement command (all zeros = hover in place)
+        cmd_msg = Twist()
+        
+        # 1. TIMEOUT/SAFETY WATCHDOG
+        time_since_target = (self.get_clock().now() - self.last_target_time).nanoseconds / 1e9
+        if time_since_target > 1.5:
+            # If we haven't seen a face for 1.5 seconds, stop tracking so we don't crash
+            self.state = State.SCAN
+            self.latest_target = None
 
-    # --- distance_callback ---
-    # ROS 2 will call this automatically whenever a new message arrives.
-    # It receives `msg` as a parameter — a Float32 object.
-    # Access the actual number with msg.data
-    #
-    # You need to:
-    #   1. Extract the distance from msg.data
-    #
-    #   2. Write an if/elif/else block that decides what the robot should do:
-    #      - Less than 0.5m  → emergency stop
-    #      - Less than 1.5m  → slow down
-    #      - Less than 3.0m  → caution
-    #      - Otherwise       → full speed ahead
-    #
-    #   3. Log the distance and the decision with self.get_logger().info()
+        # 2. BEHAVIOR BASED ON CURRENT STATE
+        if self.state == State.STANDBY:
+            # Do nothing, hover. Wait for target.
+            if self.latest_target is not None:
+                self.state = State.TRACK
+                self.get_logger().info("Intruder detected! Switching to TRACK.")
 
+        elif self.state == State.SCAN:
+            # Slowly spin around to look for a face
+            cmd_msg.angular.z = 0.5  # Positive yaw spins slowly to the left
+            if self.latest_target is not None:
+                self.state = State.TRACK
+                self.get_logger().info("Found a face! Switching to TRACK.")
+
+        elif self.state == State.TRACK:
+            if self.latest_target is not None:
+                # CALCULATE ERRORS (How far are we from perfect?)
+                error_x = self.center_x - self.latest_target.x
+                error_y = self.center_y - self.latest_target.y
+                error_area = self.target_area - self.latest_target.z
+                
+                # TURN ERRORS INTO MOVEMENT 
+                # (We multiply by very small numbers to keep movements gentle)
+                
+                # Yaw left/right to center face horizonally
+                cmd_msg.angular.z = error_x * 0.005
+                
+                # Fly up/down to center face vertically
+                cmd_msg.linear.z = error_y * 0.005
+                
+                # Fly forward/backward to maintain distance (area)
+                cmd_msg.linear.x = error_area * 0.00005
+
+        # 3. PUBLISH THE MOVEMENT COMMAND
+        self.cmd_publisher.publish(cmd_msg)
 
 def main(args=None):
+    # This boilerplate actually starts the ROS 2 node
     rclpy.init(args=args)
-    noder = ControllerNode()
-    rclpy.spin(noder)
-    noder.destroy_node()
-    rclpy.shutdown()
-
+    node = ControllerNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

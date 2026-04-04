@@ -5,11 +5,13 @@ import cv2
 import numpy as np
 import struct
 import time
+from geometry_msgs.msg import Point
 
 class VisionNode(Node):
     def __init__(self):
         super().__init__('vision_node')
         self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        self.publisher = self.create_publisher(Point, 'face_position', 10)
         
         self.ip = '192.168.4.1'
         self.port = 5000
@@ -70,7 +72,23 @@ class VisionNode(Node):
                         
                         for (x, y, w, h) in faces:
                             cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2)
-                            self.get_logger().info(f"Face found at X:{x} Y:{y}")
+                            
+                            # 1. Calculate the center of the face
+                            center_x = float(x + (w / 2))
+                            center_y = float(y + (h / 2))
+                            
+                            # 2. Use 'Z' to hold the area of the box (width * height)
+                            area = float(w * h)
+                            
+                            # 3. Create the Point message
+                            msg = Point()
+                            msg.x = center_x
+                            msg.y = center_y
+                            msg.z = area
+                            
+                            # 4. Broadcast the message to the Controller!
+                            self.publisher.publish(msg)
+                            self.get_logger().info(f"Published target: X={center_x}, Y={center_y}, Area={area}")
                             
                         # The AI Deck camera is tiny (324x244). Let's scale it up 3x!
                         h, w = image.shape[:2]
