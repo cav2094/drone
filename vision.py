@@ -68,7 +68,7 @@ class VisionNode(Node):
 
                     if image is not None:
                         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                        faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+                        faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=2, minSize=(20, 20))
                         
                         for (x, y, w, h) in faces:
                             cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2)

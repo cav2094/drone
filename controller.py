@@ -83,7 +83,14 @@ class ControllerNode(Node):
 
         # 3. PUBLISH THE MOVEMENT COMMAND
         self.cmd_publisher.publish(cmd_msg)
-
+        
+        # PROOF OF CONCEPT LOGGING: 
+        # Print the virtual stick movements to the terminal so we can see it's working!
+        if self.state == State.TRACK:
+            self.get_logger().info(f"TRACKING -> Yaw: {cmd_msg.angular.z:.3f} | Up/Down: {cmd_msg.linear.z:.3f} | Forward: {cmd_msg.linear.x:.3f}")
+        elif self.state == State.SCAN:
+            self.get_logger().info(f"SCANNING -> Yaw: {cmd_msg.angular.z:.3f}")
+            
 def main(args=None):
     # This boilerplate actually starts the ROS 2 node
     rclpy.init(args=args)

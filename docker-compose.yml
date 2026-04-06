@@ -1,19 +1,10 @@
 services:
-  sensor:
-    build: .
-    command: python3 sensor.py
-    environment:
-      - PYTHONUNBUFFERED=1
-      - ROS_DOMAIN_ID=0
-
   controller:
     build: .
     command: python3 controller.py
     environment:
       - PYTHONUNBUFFERED=1
       - ROS_DOMAIN_ID=0
-    depends_on:
-      - sensor
 
   vision:
     build: .
@@ -22,5 +13,7 @@ services:
       - PYTHONUNBUFFERED=1
       - ROS_DOMAIN_ID=0
       - DISPLAY=host.docker.internal:0
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_SOFTWARE=1
     ports:
       - "5000:5000/udp"
