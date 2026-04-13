@@ -7,7 +7,6 @@ from cflib.crazyflie import Crazyflie
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 from cflib.positioning.motion_commander import MotionCommander
 
-# REPLACE THIS WITH YOUR CRAZYFLIE RADIO URI
 URI = 'radio://0/80/2M/E7E7E7E7E7'
 
 def main():
