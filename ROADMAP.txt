@@ -1,0 +1,95 @@
+DRONE PROJECT ROADMAP
+=====================
+
+PHASE 1 — PERCEPTION UPGRADE
+------------------------------
+- Replace Haar cascade with YOLOv8-nano
+  - Add a dedicated inference ROS node (inference.py)
+  - Run inference on host GPU, publish detections to a new topic
+  - Haar cascade is 2001 tech — YOLOv8 is what industry uses
+
+- Add a Kalman Filter tracker
+  - Predict face position between detections
+  - Handle occlusions without immediately dropping the target
+  - Publish smoothed position instead of raw detection
+
+- Multi-person tracking
+  - Assign unique IDs to each detected person
+  - Use SORT or DeepSORT for re-identification across frames
+
+
+PHASE 2 — CONTROL UPGRADE
+---------------------------
+- Replace proportional gain with a real PID controller
+  - Add integral and derivative terms to controller.py
+  - Tune Kp, Ki, Kd for each axis (yaw, z, x)
+  - Prevents overshoot and oscillation
+
+- Waypoint navigation
+  - Define a patrol route as a list of (x, y, z) waypoints
+  - Drone patrols route until a face is detected, then switches to TRACK
+
+- Safety behaviors
+  - Return-to-home when battery drops below threshold
+  - Auto-land if target is lost for more than N seconds
+  - Geofencing — define a boundary the drone cannot leave
+
+
+PHASE 3 — AUTONOMY ARCHITECTURE
+----------------------------------
+- Replace state machine with a Behavior Tree
+  - Use py-trees library
+  - Behavior trees are the industry standard for robot autonomy
+  - Easier to extend and debug than a flat state machine
+  - Nodes: Patrol, Detect, Track, Engage, ReturnHome, Land
+
+- Mission planner node
+  - Separate high-level mission logic from low-level control
+  - missions.py publishes high-level goals
+  - controller.py executes them
+
+
+PHASE 4 — SIMULATION
+----------------------
+- Add a Gazebo simulation
+  - Model the Crazyflie in Gazebo
+  - Run the full ROS 2 stack in simulation without hardware
+  - Critical for testing — autonomy companies live in simulation
+  - Lets you develop and debug without risking the drone
+
+- Add a docker-compose.sim.yml
+  - Separate simulation environment from hardware deployment
+
+
+PHASE 5 — INFRASTRUCTURE
+--------------------------
+- rosbag recording
+  - Record every flight automatically
+  - Replay bags for debugging without re-flying
+  - Add a record.py script that starts recording on launch
+
+- Real-time web dashboard
+  - Live video feed with bounding boxes
+  - Drone state, battery, and telemetry
+  - Built with Flask or FastAPI + WebSockets
+
+- Unit tests
+  - Test controller logic with mock ROS messages
+  - Test state machine transitions
+  - CI pipeline with GitHub Actions
+
+- Proper README
+  - System architecture diagram
+  - Hardware requirements
+  - How to run (hardware and simulation)
+  - Demo video link
+
+
+PRIORITY ORDER (for job applications)
+---------------------------------------
+1. Gazebo simulation   — shows you can work without hardware, industry standard
+2. YOLOv8 inference   — modern perception pipeline
+3. Kalman filter       — fundamental state estimation
+4. Behavior tree       — real autonomy architecture
+5. Web dashboard       — visual demo for recruiters
+6. Unit tests + CI     — shows engineering discipline

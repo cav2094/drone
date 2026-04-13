@@ -6,19 +6,40 @@ import numpy as np
 import struct
 import time
 from geometry_msgs.msg import Point
+from ultralytics import YOLO
 
 class VisionNode(Node):
     def __init__(self):
         super().__init__('vision_node')
-        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        self.model = YOLO('yolov8n.pt')  # Auto-downloads pretrained COCO weights
+
+        # COCO classes we care about
+        self.target_classes = [0, 2, 3, 5, 7, 4]  # person, car, motorcycle, bus, truck, airplane(drone)
+        self.class_labels = {
+            0: 'Person',
+            2: 'Car',
+            3: 'Motorcycle',
+            5: 'Bus',
+            7: 'Truck',
+            4: 'Drone',
+        }
+        self.class_colors = {
+            0: (0, 255, 0),    # Person    - green
+            2: (0, 0, 255),    # Car       - red
+            3: (255, 165, 0),  # Motorcycle - orange
+            5: (255, 0, 255),  # Bus       - magenta
+            7: (0, 255, 255),  # Truck     - yellow
+            4: (255, 0, 0),    # Drone     - blue
+        }
+
         self.publisher = self.create_publisher(Point, 'face_position', 10)
-        
+
         self.ip = '192.168.4.1'
         self.port = 5000
-        
+
         # We must use TCP (SOCK_STREAM), not UDP!
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        
+
         self.get_logger().info(f"Connecting to AI-deck at {self.ip}:{self.port}...")
         try:
             self.sock.connect((self.ip, self.port))
@@ -67,29 +88,36 @@ class VisionNode(Node):
                         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
                     if image is not None:
-                        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                        faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=2, minSize=(20, 20))
-                        
-                        for (x, y, w, h) in faces:
-                            cv2.rectangle(image, (x, y), (x+w, y+h), (0, 255, 0), 2)
-                            
-                            # 1. Calculate the center of the face
-                            center_x = float(x + (w / 2))
-                            center_y = float(y + (h / 2))
-                            
-                            # 2. Use 'Z' to hold the area of the box (width * height)
-                            area = float(w * h)
-                            
-                            # 3. Create the Point message
-                            msg = Point()
-                            msg.x = center_x
-                            msg.y = center_y
-                            msg.z = area
-                            
-                            # 4. Broadcast the message to the Controller!
-                            self.publisher.publish(msg)
-                            self.get_logger().info(f"Published target: X={center_x}, Y={center_y}, Area={area}")
-                            
+                        # Run YOLOv8 inference on all target classes
+                        results = self.model(image, classes=self.target_classes, verbose=False)
+
+                        for result in results:
+                            for box in result.boxes:
+                                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                                conf = float(box.conf[0])
+                                cls = int(box.cls[0])
+
+                                label = self.class_labels.get(cls, 'Unknown')
+                                color = self.class_colors.get(cls, (255, 255, 255))
+
+                                # Draw bounding box and label
+                                cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+                                cv2.putText(image, f'{label} {conf:.2f}', (x1, y1 - 5),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+
+                                # Calculate center and area of the bounding box
+                                center_x = float(x1 + (x2 - x1) / 2)
+                                center_y = float(y1 + (y2 - y1) / 2)
+                                area = float((x2 - x1) * (y2 - y1))
+
+                                # Publish target position to controller
+                                msg = Point()
+                                msg.x = center_x
+                                msg.y = center_y
+                                msg.z = area
+                                self.publisher.publish(msg)
+                                self.get_logger().info(f"{label} detected: X={center_x:.1f}, Y={center_y:.1f}, Conf={conf:.2f}")
+
                         # The AI Deck camera is tiny (324x244). Let's scale it up 3x!
                         h, w = image.shape[:2]
                         display_image = cv2.resize(image, (w*3, h*3), interpolation=cv2.INTER_NEAREST)

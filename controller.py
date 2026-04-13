@@ -1,6 +1,8 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Point, Twist
+import socket
+import json
 
 from enum import Enum                                                         
                                                                                 
@@ -22,6 +24,11 @@ class ControllerNode(Node):
 
         # 3. Setup the heartbeat
         self.timer = self.create_timer(0.1, self.timer_callback)
+
+        # 4. Setup Python UDP Socket (The "Escape Hatch" to the Mac Host)
+        self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # We tell the container to send these to the Mac host on port 9000
+        self.host_address = ('host.docker.internal', 9000)
 
         # Initial Tracking Variables
         self.state = State.STANDBY
@@ -80,6 +87,19 @@ class ControllerNode(Node):
                 
                 # Fly forward/backward to maintain distance (area)
                 cmd_msg.linear.x = error_area * 0.00005
+
+        # --- NEW CODE: Broadcast to Mac Host ---
+        try:
+            telemetry = {
+                "vx": float(cmd_msg.linear.x),
+                "vy": float(cmd_msg.linear.y),
+                "vz": float(cmd_msg.linear.z),
+                "yaw": float(cmd_msg.angular.z)
+            }
+            json_data = json.dumps(telemetry).encode('utf-8')
+            self.udp_sock.sendto(json_data, self.host_address)
+        except Exception as e:
+            self.get_logger().error(f"UDP failed: {e}")
 
         # 3. PUBLISH THE MOVEMENT COMMAND
         self.cmd_publisher.publish(cmd_msg)

@@ -1,0 +1,4 @@
+# Dependencies for the Mac Host side scripts
+# (Do not install these inside the Docker container, they run natively on your Mac)
+
+cflib
